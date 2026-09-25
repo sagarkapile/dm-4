@@ -305,8 +305,9 @@ class CockpitManager:
         Assign a fixed ESP32/DAC vehicle to a cockpit.
 
         ESP cars have no Nano/RF pairing: the ESP32 USB serial controller
-        bound to this cockpit_id (see app.py reconcile_esp_devices) is used
-        directly by the shared control worker.
+        bound to this car_id (see app.py reconcile_esp_devices; keyed by
+        esp_car_id, not the RF cockpit_id) is used directly by the shared
+        control worker.
         """
 
         cockpit = self.cockpits.get(cockpit_id)

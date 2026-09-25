@@ -3549,8 +3549,9 @@ def cockpit_control_worker(cockpit_id):
 
         # Resolve Nano from Vehicle Management pairing. Live serial presence
         # is not required to start the worker; send_control soft-fails offline.
+        # ESP cars have no Nano/RF pairing to resolve.
         radio_id = cockpit.radio_id
-        if cockpit.vehicle_name:
+        if cockpit.vehicle_type != "esp" and cockpit.vehicle_name:
             paired_nano, _rx, _ctrl = _resolve_cockpit_pairing(cockpit)
             if paired_nano:
                 radio_id = paired_nano
