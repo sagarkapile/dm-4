@@ -30,6 +30,11 @@
            class="text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white">
             WiFi
         </a>
+        <button id="piRestartButton"
+                onclick="restartPi()"
+                class="text-xs font-bold uppercase tracking-widest text-red-500 border border-red-600/60 bg-red-600/10 px-3 py-1.5 hover:bg-red-600 hover:text-white transition">
+            Restart Pi
+        </button>
     </div>
 </nav>
 
@@ -1393,11 +1398,44 @@ async function syncWiFi() {
 
     } catch (error) {
         showCockpitMessage(error.message, false);
-
     } finally {
         if (button) {
             button.disabled = false;
             button.innerText = "Sync WiFi";
+        }
+    }
+}
+
+async function restartPi() {
+    if (!confirm("Restart the Pi now? Active driving sessions will be interrupted.")) {
+        return;
+    }
+
+    const button = document.getElementById("piRestartButton");
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Restarting...";
+    }
+
+    try {
+        const res = await fetch("/api/system/restart", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: "{}"
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Restart request failed");
+        }
+
+        showCockpitMessage("Pi is restarting. Reload this page in a minute.", true);
+    } catch (error) {
+        showCockpitMessage(error.message, false);
+        if (button) {
+            button.disabled = false;
+            button.innerText = "Restart Pi";
         }
     }
 }

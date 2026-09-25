@@ -596,6 +596,83 @@ FFB_MULTIPLIER = 50.0
 FFB_KICK_DURATION = 0.25
 
 
+def _load_esp_cockpit_settings():
+    """Load persistent per-ESP-cockpit settings from disk."""
+    try:
+        if not os.path.exists(ESP_COCKPIT_SETTINGS_FILE):
+            print("[ESP Settings] No saved settings found; using defaults")
+            return
+
+        with open(ESP_COCKPIT_SETTINGS_FILE, "r", encoding="utf-8") as handle:
+            saved = json.load(handle)
+
+        if not isinstance(saved, dict):
+            print("[ESP Settings] Invalid settings file; using defaults")
+            return
+
+        with esp_cockpit_settings_lock:
+            for cockpit_id in range(1, ESP_COCKPIT_COUNT + 1):
+                saved_settings = saved.get(str(cockpit_id))
+
+                if not isinstance(saved_settings, dict):
+                    continue
+
+                current = esp_cockpit_settings[cockpit_id]
+
+                try:
+                    value = int(
+                        saved_settings.get(
+                            "session_duration_minutes",
+                            current["session_duration_minutes"]
+                        )
+                    )
+                    if 1 <= value <= 120:
+                        current["session_duration_minutes"] = value
+                except (TypeError, ValueError):
+                    pass
+
+                try:
+                    value = int(
+                        saved_settings.get(
+                            "steering_sensitivity",
+                            current["steering_sensitivity"]
+                        )
+                    )
+                    if 10 <= value <= 200:
+                        current["steering_sensitivity"] = value
+                except (TypeError, ValueError):
+                    pass
+
+                try:
+                    value = int(
+                        saved_settings.get(
+                            "throttle_sensitivity",
+                            current["throttle_sensitivity"]
+                        )
+                    )
+                    if 10 <= value <= 100:
+                        current["throttle_sensitivity"] = value
+                except (TypeError, ValueError):
+                    pass
+
+                try:
+                    val = saved_settings.get(
+                        "autocenter_enabled",
+                        current["autocenter_enabled"]
+                    )
+                    if isinstance(val, bool):
+                        current["autocenter_enabled"] = val
+                    elif isinstance(val, str):
+                        current["autocenter_enabled"] = val.lower() == "true"
+                except Exception:
+                    pass
+
+        print("[ESP Settings] Persistent settings loaded")
+
+    except Exception as exc:
+        print(f"[ESP Settings] Load error: {exc}")
+
+
 def _save_esp_cockpit_settings():
     try:
         with esp_cockpit_settings_lock:
@@ -616,6 +693,8 @@ def _save_esp_cockpit_settings():
 
     except Exception as exc:
         print(f"[ESP Settings] Save error: {exc}")
+
+_load_esp_cockpit_settings()
 
 def stop_esp_cockpit_session(cockpit_id):
     with esp_cockpit_sessions_lock:
@@ -3359,7 +3438,22 @@ def cockpit_device_monitor_worker():
                     f"wheels {len(previous_wheels)} -> {len(current_wheels)}, "
                     f"Nanos {len(previous_radios)} -> {len(current_radios)}"
                 )
+                # A wheel move can land on either the RF or the ESP USB
+                # group, so both device tables must be reconciled here.
                 reconcile_cockpit_devices()
+                reconcile_esp_devices()
+
+                with esp_cockpits_lock:
+                    ready_esp_cockpits = [
+                        cockpit_id
+                        for cockpit_id, cockpit in esp_cockpits.items()
+                        if cockpit["wheel"] is not None
+                        and cockpit["esp"] is not None
+                    ]
+
+                for cockpit_id in ready_esp_cockpits:
+                    start_esp_cockpit_control_worker(cockpit_id)
+
                 previous_wheels = _scan_g29_identities()
                 previous_radios = _scan_radio_ids()
 
@@ -5471,6 +5565,32 @@ def status():
     })
 
 
+def _reboot_pi():
+    """Reboot the host Pi. Runs on a delay so the HTTP response can be sent."""
+    time.sleep(1.0)
+    try:
+        subprocess.run(["sudo", "reboot"], check=False)
+    except Exception as exc:
+        print(f"[System] Reboot command failed: {exc}")
+
+
+@app.route('/api/system/restart', methods=['POST'])
+def system_restart_api():
+    """Reboot the Raspberry Pi from the UI restart button."""
+    try:
+        threading.Thread(target=_reboot_pi, daemon=True).start()
+        return jsonify({
+            "success": True,
+            "message": "Pi is restarting..."
+        })
+    except Exception as e:
+        print(f"[System] Restart request error: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @app.route('/vehicle/settings', methods=['GET', 'POST'])
 def vehicle_settings():
     global steering_sensitivity, throttle_limit
@@ -5601,7 +5721,7 @@ if __name__ == '__main__':
 
     # Keep Flask alive while G29s are plugged/unplugged. The monitor only
     # rescans wheels when the detected wheel set changes.
-    # start_cockpit_device_monitor()
+    start_cockpit_device_monitor()
 
     try:
         app.run(host='0.0.0.0', port=5001)
@@ -5610,7 +5730,7 @@ if __name__ == '__main__':
         stop_lap_timer()
         stop_vehicle_discovery()
 
-        # stop_cockpit_device_monitor()
+        stop_cockpit_device_monitor()
         stop_cockpit_control_workers()
         stop_esp_cockpit_control_workers()
         cockpit_manager.close()
