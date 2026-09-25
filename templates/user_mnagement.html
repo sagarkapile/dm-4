@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+            background: #080606;
+            color: #ffffff;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        body {
+            padding: 32px 36px 48px;
+        }
+
+        .page {
+            width: 100%;
+        }
+
+        /* ---------- HEADER ---------- */
+
+        .eyebrow {
+            color: #71839d;
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 6px;
+            margin-bottom: 22px;
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .title {
+            margin: 0;
+            font-size: clamp(46px, 4.3vw, 68px);
+            line-height: 0.95;
+            font-style: italic;
+            font-weight: 900;
+            letter-spacing: -2px;
+            text-transform: uppercase;
+        }
+
+        .title-white {
+            color: #ffffff;
+        }
+
+        .title-red {
+            color: #e52529;
+            margin-left: 12px;
+        }
+
+        .header-line {
+            width: 120px;
+            height: 6px;
+            background: #e52529;
+            margin-top: 30px;
+            margin-bottom: 46px;
+        }
+
+        .add-driver-btn {
+            border: 0;
+            background: #e52529;
+            color: #ffffff;
+            min-width: 225px;
+            height: 61px;
+            padding: 0 28px;
+            font-size: 17px;
+            font-weight: 900;
+            letter-spacing: 1.2px;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        .add-driver-btn:hover {
+            background: #f02b30;
+        }
+
+        /* ---------- ACTIVE DRIVER ---------- */
+
+        .active-card {
+            min-height: 134px;
+            border: 1px solid #292626;
+            background: linear-gradient(90deg, #131010 0%, #100d0d 100%);
+            padding: 31px 30px;
+            position: relative;
+            margin-bottom: 36px;
+        }
+
+        .section-label {
+            color: #71839d;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 17px;
+        }
+
+        .active-driver-name {
+            font-size: 30px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .active-card .collapse-mark {
+            position: absolute;
+            right: 29px;
+            top: 61px;
+            color: #748196;
+            font-size: 20px;
+            font-weight: 300;
+        }
+
+        /* ---------- SEARCH ---------- */
+
+        .search-box {
+            width: 100%;
+            height: 69px;
+            border: 1px solid #393536;
+            background: #090909;
+            color: #ffffff;
+            padding: 0 20px;
+            font-size: 18px;
+            outline: none;
+            margin-bottom: 30px;
+        }
+
+        .search-box::placeholder {
+            color: #7890ad;
+            opacity: 1;
+        }
+
+        .search-box:focus {
+            border-color: #e52529;
+        }
+
+        /* ---------- TABLE ---------- */
+
+        .table-card {
+            width: 100%;
+            border: 1px solid #262323;
+            overflow: hidden;
+            background: #110e0e;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        thead {
+            background: #211c1d;
+        }
+
+        th {
+            height: 70px;
+            padding: 0 30px;
+            text-align: left;
+            color: #71839d;
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        th:nth-child(1) {
+            width: 13%;
+        }
+
+        th:nth-child(2) {
+            width: 37%;
+        }
+
+        th:nth-child(3) {
+            width: 25%;
+        }
+
+        th:nth-child(4) {
+            width: 25%;
+            text-align: right;
+        }
+
+        td {
+            height: 68px;
+            padding: 12px 30px;
+            border-top: 1px solid #241f20;
+            color: #ffffff;
+            font-size: 17px;
+            font-weight: 600;
+        }
+
+        td:first-child {
+            color: #8795a8;
+        }
+
+        td:last-child {
+            text-align: right;
+        }
+
+        .empty-row {
+            height: 168px;
+            text-align: center !important;
+            color: #e52529 !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.5px;
+        }
+
+        .error-row {
+            height: 168px;
+            text-align: center !important;
+            color: #e52529 !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+        }
+
+        /* ---------- ACTIONS ---------- */
+
+        .action-btn {
+            border: 1px solid #484143;
+            background: #171314;
+            color: #ffffff;
+            height: 34px;
+            padding: 0 13px;
+            margin-left: 7px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .action-btn:hover {
+            border-color: #e52529;
+        }
+
+        .action-btn.select-btn {
+            background: #e52529;
+            border-color: #e52529;
+        }
+
+        .action-btn.delete-btn:hover {
+            background: #e52529;
+        }
+
+        /* ---------- MODAL ---------- */
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal {
+            width: min(560px, 100%);
+            background: #111010;
+            border: 1px solid #343031;
+            box-shadow: 0 20px 70px rgba(0, 0, 0, 0.65);
+        }
+
+        .modal-header {
+            padding: 25px 28px 22px;
+            border-bottom: 1px solid #292526;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-title {
+            margin: 0;
+            font-size: 27px;
+            font-style: italic;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .close-btn {
+            border: 0;
+            background: transparent;
+            color: #8793a5;
+            font-size: 28px;
+            cursor: pointer;
+        }
+
+        .modal-body {
+            padding: 28px;
+        }
+
+        .field {
+            margin-bottom: 22px;
+        }
+
+        .field label {
+            display: block;
+            color: #71839d;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            margin-bottom: 9px;
+            text-transform: uppercase;
+        }
+
+        .field input {
+            width: 100%;
+            height: 52px;
+            border: 1px solid #3b3738;
+            background: #080808;
+            color: #ffffff;
+            padding: 0 15px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .field input:focus {
+            border-color: #e52529;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 20px 28px 26px;
+            border-top: 1px solid #292526;
+        }
+
+        .modal-btn {
+            height: 45px;
+            padding: 0 22px;
+            border: 1px solid #484143;
+            background: #171314;
+            color: #ffffff;
+            font-weight: 800;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .modal-btn.primary {
+            border-color: #e52529;
+            background: #e52529;
+        }
+
+        /* ---------- TOAST ---------- */
+
+        .toast {
+            position: fixed;
+            right: 30px;
+            bottom: 30px;
+            min-width: 280px;
+            max-width: 430px;
+            padding: 15px 18px;
+            background: #171314;
+            border: 1px solid #3c3738;
+            color: #ffffff;
+            font-size: 14px;
+            z-index: 2000;
+            display: none;
+        }
+
+        .toast.show {
+            display: block;
+        }
+
+        .toast.error {
+            border-color: #e52529;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+
+        @media (max-width: 850px) {
+            body {
+                padding: 24px 18px 35px;
+            }
+
+            .header-row {
+                align-items: flex-start;
+            }
+
+            .add-driver-btn {
+                min-width: auto;
+                height: 52px;
+                padding: 0 18px;
+                font-size: 13px;
+            }
+
+            .title {
+                font-size: 42px;
+            }
+
+            .title-red {
+                margin-left: 5px;
+            }
+
+            .active-card {
+                padding: 25px 20px;
+            }
+
+            th, td {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            th {
+                font-size: 11px;
+                letter-spacing: 2px;
+            }
+
+            td {
+                font-size: 14px;
+            }
+
+            .action-btn {
+                margin: 2px;
+                padding: 0 8px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .header-row {
+                flex-direction: column;
+            }
+
+            .add-driver-btn {
+                width: 100%;
+            }
+
+            .title {
+                font-size: 36px;
+            }
+
+            .table-card {
+                overflow-x: auto;
+            }
+
+            table {
+                min-width: 650px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="page">
+
+    <div class="eyebrow">DRIVER DATABASE</div>
+
+    <div class="header-row">
+        <h1 class="title">
+            <span class="title-white">USER</span>
+            <span class="title-red">MANAGEMENT</span>
+        </h1>
+
+        <button class="add-driver-btn" onclick="openAddDriver()">
+            + ADD DRIVER
+        </button>
+    </div>
+
+    <div class="header-line"></div>
+
+    <section class="active-card">
+        <div class="section-label">ACTIVE DRIVER</div>
+        <div id="activeDriverName" class="active-driver-name">
+            NO DRIVER SELECTED
+        </div>
+        <div class="collapse-mark">−</div>
+    </section>
+
+    <input
+        id="searchDriver"
+        class="search-box"
+        type="text"
+        placeholder="SEARCH DRIVER..."
+        autocomplete="off"
+    >
+
+    <section class="table-card">
+        <table>
+            <thead>
+                <tr>
+                    <th>SR. NO.</th>
+                    <th>DRIVER</th>
+                    <th>PHONE</th>
+                    <th>ACTIONS</th>
+                </tr>
+            </thead>
+
+            <tbody id="driversTableBody">
+                <tr>
+                    <td colspan="4" class="empty-row">LOADING DRIVERS...</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+</div>
+
+<!-- ADD / EDIT DRIVER MODAL -->
+<div id="driverModal" class="modal-backdrop">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="modalTitle" class="modal-title">ADD DRIVER</h2>
+            <button class="close-btn" onclick="closeDriverModal()">×</button>
+        </div>
+
+        <form id="driverForm" onsubmit="saveDriver(event)">
+            <div class="modal-body">
+                <div class="field">
+                    <label for="driverName">Driver Name</label>
+                    <input
+                        id="driverName"
+                        type="text"
+                        maxlength="100"
+                        required
+                        autocomplete="off"
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="driverPhone">Phone</label>
+                    <input
+                        id="driverPhone"
+                        type="tel"
+                        maxlength="20"
+                        autocomplete="off"
+                    >
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button
+                    type="button"
+                    class="modal-btn"
+                    onclick="closeDriverModal()"
+                >
+                    CANCEL
+                </button>
+
+                <button type="submit" class="modal-btn primary">
+                    SAVE DRIVER
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    let drivers = [];
+    let editingDriverId = null;
+
+    const tableBody = document.getElementById("driversTableBody");
+    const searchInput = document.getElementById("searchDriver");
+    const activeDriverName = document.getElementById("activeDriverName");
+    const modal = document.getElementById("driverModal");
+    const modalTitle = document.getElementById("modalTitle");
+    const driverNameInput = document.getElementById("driverName");
+    const driverPhoneInput = document.getElementById("driverPhone");
+
+    /* ---------------------------------------------------------
+       API helper
+       --------------------------------------------------------- */
+
+    async function apiRequest(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                "Content-Type": "application/json",
+                ...(options.headers || {})
+            }
+        });
+
+        const contentType = response.headers.get("content-type") || "";
+
+        if (!contentType.includes("application/json")) {
+            const text = await response.text();
+            throw new Error(
+                `Server returned ${response.status} ${response.statusText}`
+            );
+        }
+
+        const result = await response.json();
+
+        if (!response.ok || result.success === false) {
+            throw new Error(
+                result.error ||
+                result.message ||
+                `Request failed (${response.status})`
+            );
+        }
+
+        return result;
+    }
+
+    /* ---------------------------------------------------------
+       Load drivers
+       --------------------------------------------------------- */
+
+    async function loadDrivers() {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="4" class="empty-row">LOADING DRIVERS...</td>
+            </tr>
+        `;
+
+        try {
+            const result = await apiRequest("/api/users");
+
+            /*
+             * Accept either:
+             *   {success:true, users:[...]}
+             * or
+             *   {success:true, data:[...]}
+             */
+            drivers = Array.isArray(result.users)
+                ? result.users
+                : (Array.isArray(result.data) ? result.data : []);
+
+            renderDrivers();
+            await loadActiveDriver();
+
+        } catch (error) {
+            console.error("User load error:", error);
+
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="error-row">
+                        ${escapeHtml(error.message)}
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    /* ---------------------------------------------------------
+       Active driver
+       --------------------------------------------------------- */
+
+    async function loadActiveDriver() {
+        try {
+            const result = await apiRequest("/api/users/active");
+
+            const active =
+                result.user ||
+                result.data ||
+                result.active_user ||
+                null;
+
+            if (active && active.name) {
+                activeDriverName.textContent =
+                    String(active.name).toUpperCase();
+            } else {
+                activeDriverName.textContent = "NO DRIVER SELECTED";
+            }
+
+        } catch (error) {
+            console.error("Active driver load error:", error);
+            activeDriverName.textContent = "NO DRIVER SELECTED";
+        }
+    }
+
+    /* ---------------------------------------------------------
+       Render table
+       --------------------------------------------------------- */
+
+    function renderDrivers() {
+        const query = searchInput.value.trim().toLowerCase();
+
+        const filtered = drivers.filter(driver => {
+            const name = String(driver.name || "").toLowerCase();
+            const phone = String(driver.phone || "").toLowerCase();
+
+            return (
+                name.includes(query) ||
+                phone.includes(query)
+            );
+        });
+
+        if (filtered.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="empty-row">
+                        ${query ? "NO DRIVERS FOUND" : "NO DRIVERS ADDED"}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tableBody.innerHTML = filtered.map((driver, index) => {
+            const userId = driver.user_id ?? driver.id ?? "";
+            const name = driver.name || "";
+            const phone = driver.phone || "—";
+
+            return `
+                <tr>
+                    <td>${index + 1}</td>
+
+                    <td>
+                        ${escapeHtml(name)}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(phone)}
+                    </td>
+
+                    <td>
+                        <button
+                            class="action-btn select-btn"
+                            onclick="selectDriver('${escapeJs(userId)}')"
+                        >
+                            SELECT
+                        </button>
+
+                        <button
+                            class="action-btn"
+                            onclick="openEditDriver('${escapeJs(userId)}')"
+                        >
+                            EDIT
+                        </button>
+
+                        <button
+                            class="action-btn delete-btn"
+                            onclick="deleteDriver('${escapeJs(userId)}')"
+                        >
+                            DELETE
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    }
+
+    /* ---------------------------------------------------------
+       Add driver
+       --------------------------------------------------------- */
+
+    function openAddDriver() {
+        editingDriverId = null;
+
+        modalTitle.textContent = "ADD DRIVER";
+        driverNameInput.value = "";
+        driverPhoneInput.value = "";
+
+        modal.classList.add("open");
+
+        setTimeout(() => driverNameInput.focus(), 50);
+    }
+
+    /* ---------------------------------------------------------
+       Edit driver
+       --------------------------------------------------------- */
+
+    function openEditDriver(userId) {
+        const driver = drivers.find(
+            item => String(item.user_id ?? item.id) === String(userId)
+        );
+
+        if (!driver) {
+            showToast("Driver not found", true);
+            return;
+        }
+
+        editingDriverId = userId;
+
+        modalTitle.textContent = "EDIT DRIVER";
+        driverNameInput.value = driver.name || "";
+        driverPhoneInput.value = driver.phone || "";
+
+        modal.classList.add("open");
+
+        setTimeout(() => driverNameInput.focus(), 50);
+    }
+
+    function closeDriverModal() {
+        modal.classList.remove("open");
+        editingDriverId = null;
+    }
+
+    /* ---------------------------------------------------------
+       Save driver
+       --------------------------------------------------------- */
+
+    async function saveDriver(event) {
+        event.preventDefault();
+
+        const name = driverNameInput.value.trim();
+        const phone = driverPhoneInput.value.trim();
+
+        if (!name) {
+            showToast("Driver name is required", true);
+            return;
+        }
+
+        try {
+            if (editingDriverId === null) {
+                await apiRequest("/api/users", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        name: name,
+                        phone: phone
+                    })
+                });
+
+                showToast("Driver added successfully");
+            } else {
+                await apiRequest(
+                    "/api/users/" + encodeURIComponent(editingDriverId),
+                    {
+                        method: "PUT",
+                        body: JSON.stringify({
+                            name: name,
+                            phone: phone
+                        })
+                    }
+                );
+
+                showToast("Driver updated successfully");
+            }
+
+            closeDriverModal();
+            await loadDrivers();
+
+        } catch (error) {
+            console.error("Save driver error:", error);
+            showToast(error.message, true);
+        }
+    }
+
+    /* ---------------------------------------------------------
+       Select active driver
+       --------------------------------------------------------- */
+
+    async function selectDriver(userId) {
+        try {
+            await apiRequest(
+                "/api/users/" +
+                encodeURIComponent(userId) +
+                "/active",
+                {
+                    method: "POST"
+                }
+            );
+
+            await loadActiveDriver();
+            showToast("Active driver updated");
+
+        } catch (error) {
+            console.error("Select driver error:", error);
+            showToast(error.message, true);
+        }
+    }
+
+    /* ---------------------------------------------------------
+       Delete driver
+       --------------------------------------------------------- */
+
+    async function deleteDriver(userId) {
+        const driver = drivers.find(
+            item => String(item.user_id ?? item.id) === String(userId)
+        );
+
+        if (!driver) {
+            showToast("Driver not found", true);
+            return;
+        }
+
+        const confirmed = confirm(
+            `Delete driver "${driver.name}"?`
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            await apiRequest(
+                "/api/users/" +
+                encodeURIComponent(userId),
+                {
+                    method: "DELETE"
+                }
+            );
+
+            showToast("Driver deleted successfully");
+            await loadDrivers();
+
+        } catch (error) {
+            console.error("Delete driver error:", error);
+            showToast(error.message, true);
+        }
+    }
+
+    /* ---------------------------------------------------------
+       Search
+       --------------------------------------------------------- */
+
+    searchInput.addEventListener("input", renderDrivers);
+
+    /* ---------------------------------------------------------
+       Modal controls
+       --------------------------------------------------------- */
+
+    modal.addEventListener("click", function(event) {
+        if (event.target === modal) {
+            closeDriverModal();
+        }
+    });
+
+    document.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") {
+            closeDriverModal();
+        }
+    });
+
+    /* ---------------------------------------------------------
+       Toast
+       --------------------------------------------------------- */
+
+    let toastTimer = null;
+
+    function showToast(message, isError = false) {
+        const toast = document.getElementById("toast");
+
+        toast.textContent = message;
+        toast.className = "toast show";
+
+        if (isError) {
+            toast.classList.add("error");
+        }
+
+        clearTimeout(toastTimer);
+
+        toastTimer = setTimeout(() => {
+            toast.className = "toast";
+        }, 3000);
+    }
+
+    /* ---------------------------------------------------------
+       Security / HTML helpers
+       --------------------------------------------------------- */
+
+    function escapeHtml(value) {
+        return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function escapeJs(value) {
+        return String(value)
+            .replaceAll("\\", "\\\\")
+            .replaceAll("'", "\\'")
+            .replaceAll("\n", "\\n")
+            .replaceAll("\r", "\\r");
+    }
+
+    /* ---------------------------------------------------------
+       Initial load
+       --------------------------------------------------------- */
+
+    loadDrivers();
+</script>
+
+</body>
+</html>

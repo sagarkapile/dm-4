@@ -1,0 +1,541 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Management - DriveMatrix</title>
+    <script src="/static/js/tailwind.js"></script>
+    <style>
+        .metallic-finish {
+            background: linear-gradient(135deg, #18181b 0%, #09090b 100%);
+        }
+    </style>
+</head>
+<body class="bg-black text-white min-h-screen px-4 py-8">
+
+<nav class="border-b border-white/10 bg-black/90 px-4 py-4 mb-6">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="text-2xl font-black uppercase italic tracking-tighter">
+            Drive<span class="text-red-600">Matrix</span>
+        </div>
+        <a href="/"
+           class="border border-white/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:bg-white/10 hover:text-white transition">
+            Home
+        </a>
+    </div>
+</nav>
+
+<main class="w-full max-w-5xl mx-auto space-y-8">
+    <div>
+        <div class="text-xs font-black uppercase tracking-widest text-red-500">Vehicle Management</div>
+        <div class="text-xs text-zinc-500 mt-1">
+            RF cars are created from connected Nano PAIRING data at startup.
+            Edit name, Nano ID, RF ID, transponder and steering here.
+        </div>
+    </div>
+
+    <div id="vehicleMessage" class="hidden text-xs font-bold"></div>
+
+    <section class="space-y-3">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <div class="text-xs font-black uppercase tracking-widest text-red-500">RF Vehicles</div>
+                <div class="text-xs text-zinc-500 mt-1">Permanent Nano ID + RF ID pairing</div>
+            </div>
+            <button type="button"
+                    onclick="syncNanoPairings()"
+                    class="border border-white/15 px-3 py-2 text-[11px] font-bold uppercase tracking-wider hover:bg-white/10">
+                Sync Nanos
+            </button>
+        </div>
+
+        <div class="metallic-finish border border-white/10 rounded-lg p-4 space-y-4">
+            <div class="text-[11px] font-black uppercase tracking-widest text-zinc-400">Add Vehicle</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="block">
+                    <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">RF / ESP MAC ID</span>
+                    <input id="new-vehicle-receiver-id" type="text" maxlength="32" placeholder="9C52F7020F3C"
+                           class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                </label>
+                <label class="block">
+                    <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Vehicle Name</span>
+                    <input id="new-vehicle-name" type="text" maxlength="50" placeholder="Jeep Gray 1"
+                           class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                </label>
+                <label class="block">
+                    <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Paired Nano ID</span>
+                    <input id="new-vehicle-nano-id" type="text" maxlength="64" placeholder="RF-ABC123"
+                           class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                </label>
+                <label class="block">
+                    <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Transponder ID</span>
+                    <input id="new-vehicle-transponder-id" type="number" min="0" step="1" placeholder="Optional"
+                           class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                </label>
+            </div>
+            <div>
+                <div class="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Steering Direction</div>
+                <div class="flex gap-6 text-xs">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="new-vehicle-steering" value="false" checked class="accent-red-600">
+                        <span>Normal</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="new-vehicle-steering" value="true" class="accent-red-600">
+                        <span>Reversed</span>
+                    </label>
+                </div>
+            </div>
+            <button type="button" onclick="createVehicle()"
+                    class="w-full border border-red-600/60 bg-red-600/10 text-red-500 py-2.5 text-xs font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition">
+                Create Vehicle
+            </button>
+        </div>
+
+        <div id="vehicleGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="text-xs text-zinc-500 uppercase">Loading vehicles...</div>
+        </div>
+    </section>
+
+    <section class="space-y-3">
+        <div>
+            <div class="text-xs font-black uppercase tracking-widest text-blue-500">ESP Vehicles</div>
+            <div class="text-xs text-zinc-500 mt-1">Three fixed ESP cars. Separate from RF registry.</div>
+        </div>
+        <div id="espVehicleGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="text-xs text-zinc-500 uppercase">Loading ESP vehicles...</div>
+        </div>
+    </section>
+</main>
+
+<script>
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function showVehicleMessage(message, success) {
+    const el = document.getElementById("vehicleMessage");
+    if (!el) return;
+
+    el.innerText = message;
+    el.className = success
+        ? "text-xs font-bold text-green-500"
+        : "text-xs font-bold text-red-500";
+
+    clearTimeout(window.vehicleMessageTimer);
+    window.vehicleMessageTimer = setTimeout(() => {
+        el.className = "hidden text-xs font-bold";
+    }, 3500);
+}
+
+async function loadVehicles() {
+    const grid = document.getElementById("vehicleGrid");
+    if (!grid) return;
+
+    grid.innerHTML = '<div class="text-xs text-zinc-500 uppercase">Loading vehicles...</div>';
+
+    try {
+        const res = await fetch("/api/vehicles");
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Failed to load vehicles");
+        }
+
+        const vehicles = data.vehicles || [];
+        if (!vehicles.length) {
+            grid.innerHTML = '<div class="text-xs text-zinc-500 uppercase">No RF vehicles found. Connect Nanos or create one above.</div>';
+            return;
+        }
+
+        grid.innerHTML = vehicles.map(vehicle => {
+            const receiverId = String(vehicle.receiver_id || "").trim().toUpperCase();
+            const nanoId = String(vehicle.nano_id || "").trim();
+            const vehicleName = String(vehicle.name || "").trim();
+            const steeringReverse = Boolean(vehicle.steering_reverse);
+            const transponderId = vehicle.transponder_id === null || vehicle.transponder_id === undefined
+                ? ""
+                : String(vehicle.transponder_id).trim();
+
+            return `
+                <div class="metallic-finish border border-white/10 rounded-lg p-4 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="font-black uppercase tracking-wider">${escapeHtml(vehicleName)}</div>
+                        <div class="text-[10px] font-bold uppercase ${steeringReverse ? "text-red-500" : "text-zinc-600"}">
+                            ${steeringReverse ? "REVERSED" : "NORMAL"}
+                        </div>
+                    </div>
+
+                    <div class="text-xs">
+                        <span class="text-zinc-500 uppercase">RF / ESP MAC</span>
+                        <span class="ml-2 font-mono">${escapeHtml(receiverId)}</span>
+                    </div>
+
+                    <label class="block">
+                        <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Paired Nano ID</span>
+                        <input type="text" id="vehicle-nano-${escapeHtml(receiverId)}" value="${escapeHtml(nanoId)}"
+                               maxlength="64" placeholder="RF-ABC123"
+                               class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                    </label>
+
+                    <div class="border-t border-white/10 pt-3 space-y-4">
+                        <label class="block">
+                            <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Vehicle Name</span>
+                            <input type="text" id="vehicle-name-${escapeHtml(receiverId)}" value="${escapeHtml(vehicleName)}"
+                                   maxlength="50"
+                                   class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                        </label>
+
+                        <label class="block">
+                            <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Transponder ID</span>
+                            <input type="number" id="transponder-${escapeHtml(receiverId)}" value="${escapeHtml(transponderId)}"
+                                   min="0" step="1" placeholder="Enter transponder ID"
+                                   class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                        </label>
+
+                        <div>
+                            <div class="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Steering Direction</div>
+                            <div class="flex gap-6 text-xs">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" name="steering-${escapeHtml(receiverId)}" value="false" ${!steeringReverse ? "checked" : ""} class="accent-red-600">
+                                    <span>Normal</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" name="steering-${escapeHtml(receiverId)}" value="true" ${steeringReverse ? "checked" : ""} class="accent-red-600">
+                                    <span>Reversed</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button type="button" onclick="saveVehicle('${escapeHtml(receiverId)}')"
+                                    class="flex-1 border border-red-600/60 bg-red-600/10 text-red-500 py-2.5 text-xs font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition">
+                                Save
+                            </button>
+                            <button type="button" onclick="deleteVehicle('${escapeHtml(receiverId)}')"
+                                    class="flex-1 border border-red-800/60 bg-red-950/40 text-red-300 py-2.5 text-xs font-black uppercase tracking-widest hover:bg-red-800 hover:text-white transition">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    } catch (error) {
+        console.error("Vehicle Management:", error);
+        grid.innerHTML = `<div class="text-xs text-red-500 uppercase">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function loadESPVehicles() {
+    const grid = document.getElementById("espVehicleGrid");
+    if (!grid) return;
+
+    grid.innerHTML = '<div class="text-xs text-zinc-500 uppercase">Loading ESP vehicles...</div>';
+
+    try {
+        const res = await fetch("/api/esp-vehicles");
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Failed to load ESP vehicles");
+        }
+
+        const vehicles = data.vehicles || [];
+        grid.innerHTML = vehicles.map(vehicle => {
+            const carId = Number(vehicle.car_id);
+            const name = String(vehicle.name || "").trim();
+            const transponderId = vehicle.transponder_id === null || vehicle.transponder_id === undefined
+                ? ""
+                : String(vehicle.transponder_id).trim();
+
+            return `
+                <div class="metallic-finish border border-white/10 rounded-lg p-4 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="font-black uppercase tracking-wider">ESP Car ${carId}</div>
+                        <div class="text-[10px] font-bold uppercase text-zinc-600">ESP ONLY</div>
+                    </div>
+                    <div class="text-xs text-zinc-500 uppercase">Fixed car slot ${carId}</div>
+                    <div class="border-t border-white/10 pt-3 space-y-4">
+                        <label class="block">
+                            <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Car Name</span>
+                            <input type="text" id="esp-car-name-${carId}" value="${escapeHtml(name)}" maxlength="50"
+                                   class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                        </label>
+                        <label class="block">
+                            <span class="block text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Transponder ID</span>
+                            <input type="number" id="esp-transponder-${carId}" value="${escapeHtml(transponderId)}" min="0" step="1"
+                                   placeholder="Enter transponder ID"
+                                   class="w-full bg-zinc-950 border border-white/15 rounded px-3 py-2.5 text-sm focus:outline-none focus:border-red-600">
+                        </label>
+                        <button type="button" onclick="saveESPVehicle(${carId})"
+                                class="w-full border border-red-600/60 bg-red-600/10 text-red-500 py-2.5 text-xs font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition">
+                            Save ESP Car
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    } catch (error) {
+        console.error("ESP Vehicle Management:", error);
+        grid.innerHTML = `<div class="text-xs text-red-500 uppercase">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function saveESPVehicle(carId) {
+    carId = Number(carId);
+    if (!Number.isInteger(carId) || carId < 1 || carId > 3) {
+        showVehicleMessage("Invalid ESP car ID", false);
+        return;
+    }
+
+    const nameEl = document.getElementById(`esp-car-name-${carId}`);
+    const transponderEl = document.getElementById(`esp-transponder-${carId}`);
+    if (!nameEl || !transponderEl) {
+        showVehicleMessage("ESP vehicle settings not found", false);
+        return;
+    }
+
+    const name = nameEl.value.trim();
+    const transponderText = transponderEl.value.trim();
+    const transponderId = transponderText === "" ? null : Number(transponderText);
+
+    if (!name) {
+        showVehicleMessage("ESP car name cannot be empty", false);
+        nameEl.focus();
+        return;
+    }
+    if (transponderId !== null && (!Number.isInteger(transponderId) || transponderId < 0)) {
+        showVehicleMessage("Transponder ID must be a non-negative integer", false);
+        transponderEl.focus();
+        return;
+    }
+
+    const button = document.querySelector(`button[onclick="saveESPVehicle(${carId})"]`);
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Saving...";
+    }
+
+    try {
+        const res = await fetch(`/api/esp-vehicles/${carId}/settings`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ name, transponder_id: transponderId })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "ESP vehicle save failed");
+        }
+        showVehicleMessage(`${name} saved`, true);
+        await loadESPVehicles();
+    } catch (error) {
+        console.error("ESP Vehicle save:", error);
+        showVehicleMessage(error.message, false);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = "Save ESP Car";
+        }
+    }
+}
+
+async function createVehicle() {
+    const receiverIdEl = document.getElementById("new-vehicle-receiver-id");
+    const nameEl = document.getElementById("new-vehicle-name");
+    const nanoEl = document.getElementById("new-vehicle-nano-id");
+    const transponderEl = document.getElementById("new-vehicle-transponder-id");
+    const steeringEl = document.querySelector('input[name="new-vehicle-steering"]:checked');
+
+    if (!receiverIdEl || !nameEl || !nanoEl || !transponderEl || !steeringEl) {
+        showVehicleMessage("Vehicle form not found", false);
+        return;
+    }
+
+    const receiverId = receiverIdEl.value.trim();
+    const name = nameEl.value.trim();
+    const nanoId = nanoEl.value.trim();
+    const transponderText = transponderEl.value.trim();
+    const steeringReverse = steeringEl.value === "true";
+    const transponderId = transponderText === "" ? null : Number(transponderText);
+
+    if (!receiverId) {
+        showVehicleMessage("RF / ESP MAC ID cannot be empty", false);
+        receiverIdEl.focus();
+        return;
+    }
+    if (!name) {
+        showVehicleMessage("Vehicle name cannot be empty", false);
+        nameEl.focus();
+        return;
+    }
+    if (transponderId !== null && (!Number.isInteger(transponderId) || transponderId < 0)) {
+        showVehicleMessage("Transponder ID must be a non-negative integer", false);
+        transponderEl.focus();
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/vehicles", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                receiver_id: receiverId,
+                name,
+                nano_id: nanoId || null,
+                transponder_id: transponderId,
+                steering_reverse: steeringReverse
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Vehicle creation failed");
+        }
+
+        showVehicleMessage(`${name} created`, true);
+        receiverIdEl.value = "";
+        nameEl.value = "";
+        nanoEl.value = "";
+        transponderEl.value = "";
+        document.querySelector('input[name="new-vehicle-steering"][value="false"]').checked = true;
+        await loadVehicles();
+    } catch (error) {
+        console.error("Vehicle create:", error);
+        showVehicleMessage(error.message, false);
+    }
+}
+
+async function deleteVehicle(receiverId) {
+    receiverId = String(receiverId).trim().toUpperCase();
+    if (!receiverId) {
+        showVehicleMessage("Invalid vehicle ID", false);
+        return;
+    }
+    if (!window.confirm(`Delete vehicle ${receiverId}?`)) return;
+
+    try {
+        const res = await fetch(`/api/vehicles/${encodeURIComponent(receiverId)}`, {
+            method: "DELETE",
+            headers: {"Content-Type": "application/json"}
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Vehicle deletion failed");
+        }
+        showVehicleMessage(`${receiverId} deleted`, true);
+        await loadVehicles();
+    } catch (error) {
+        console.error("Vehicle delete:", error);
+        showVehicleMessage(error.message, false);
+    }
+}
+
+async function saveVehicle(receiverId) {
+    receiverId = String(receiverId).trim().toUpperCase();
+    if (!receiverId) {
+        showVehicleMessage("Invalid vehicle ID", false);
+        return;
+    }
+
+    const nameEl = document.getElementById(`vehicle-name-${receiverId}`);
+    const steeringEl = document.querySelector(`input[name="steering-${receiverId}"]:checked`);
+    const transponderEl = document.getElementById(`transponder-${receiverId}`);
+    const nanoEl = document.getElementById(`vehicle-nano-${receiverId}`);
+
+    if (!nameEl || !steeringEl || !transponderEl || !nanoEl) {
+        showVehicleMessage("Vehicle settings not found", false);
+        return;
+    }
+
+    const name = nameEl.value.trim();
+    const nanoId = nanoEl.value.trim();
+    const steeringReverse = steeringEl.value === "true";
+    const transponderText = transponderEl.value.trim();
+    const transponderId = transponderText === "" ? null : Number(transponderText);
+
+    if (transponderId !== null && (!Number.isInteger(transponderId) || transponderId < 0)) {
+        showVehicleMessage("Transponder ID must be a non-negative integer", false);
+        transponderEl.focus();
+        return;
+    }
+    if (!name) {
+        showVehicleMessage("Vehicle name cannot be empty", false);
+        nameEl.focus();
+        return;
+    }
+
+    const button = document.querySelector(`button[onclick="saveVehicle('${receiverId}')"]`);
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Saving...";
+    }
+
+    try {
+        const res = await fetch(`/api/vehicles/${receiverId}/settings`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                name,
+                nano_id: nanoId || null,
+                steering_reverse: steeringReverse,
+                transponder_id: transponderId
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Vehicle settings save failed");
+        }
+        showVehicleMessage(`${name} settings saved`, true);
+        await loadVehicles();
+    } catch (error) {
+        console.error("Vehicle save:", error);
+        showVehicleMessage(error.message, false);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = "Save";
+        }
+    }
+}
+
+async function syncNanoPairings() {
+    const button = document.querySelector('button[onclick="syncNanoPairings()"]');
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Syncing...";
+    }
+
+    try {
+        const res = await fetch("/api/vehicles/sync-nanos", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: "{}"
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Nano pairing sync failed");
+        }
+        showVehicleMessage(
+            `Synced ${data.created || 0} created, ${data.updated || 0} updated`,
+            true
+        );
+        await loadVehicles();
+    } catch (error) {
+        console.error("Nano sync:", error);
+        showVehicleMessage(error.message, false);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = "Sync Nanos";
+        }
+    }
+}
+
+loadESPVehicles();
+loadVehicles();
+</script>
+</body>
+</html>

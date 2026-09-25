@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DriveMatrix — Leaderboard</title>
+    <script src="/static/js/tailwind.js"></script>
+    <style>
+        .metallic-finish {
+            background: linear-gradient(135deg, #18181b 0%, #09090b 100%);
+        }
+        .table-row {
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .table-row:last-child {
+            border-bottom: 0;
+        }
+    </style>
+</head>
+
+<body class="bg-black text-white min-h-screen px-4 py-8">
+
+<nav class="border-b border-white/10 bg-black/90 px-4 py-4 mb-6">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
+        <div class="text-2xl font-black uppercase italic tracking-tighter">
+            Drive<span class="text-red-600">Matrix</span>
+        </div>
+
+        <div class="flex items-center gap-5">
+            <a href="/"
+               class="text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white">
+                Cockpits
+            </a>
+            <a href="/vehicle-management"
+               class="text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white">
+                Vehicles
+            </a>
+            <a href="/user-management"
+               class="text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white">
+                Users
+            </a>
+            <a href="/leaderboard"
+               class="text-xs font-black uppercase tracking-widest text-red-500">
+                Leaderboard
+            </a>
+        </div>
+    </div>
+</nav>
+
+<main class="w-full max-w-5xl mx-auto space-y-5">
+
+    <!-- LEADERBOARD -->
+    <section class="metallic-finish border border-white/10 rounded-lg overflow-hidden">
+
+        <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+            <div>
+                <div class="text-xs font-black uppercase tracking-widest text-red-500">
+                    Leaderboard
+                </div>
+                <div class="text-xs text-zinc-500 mt-1">
+                    Best lap times from the current DriveMatrix runtime
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div id="leaderboardStatus"
+                     class="text-[10px] font-bold uppercase text-zinc-600">
+                    UPDATING
+                </div>
+                <button onclick="loadLeaderboard()"
+                        class="border border-white/15 px-3 py-2 text-[11px] font-bold uppercase tracking-wider hover:bg-white/10">
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="bg-black/40">
+                    <tr class="text-[10px] text-zinc-500 uppercase tracking-widest">
+                        <th class="px-5 py-3 w-20">Rank</th>
+                        <th class="px-5 py-3">Driver</th>
+                        <th class="px-5 py-3">Best Lap</th>
+                        <th class="px-5 py-3">Last Lap</th>
+                        <th class="px-5 py-3 text-right">Laps</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <tr>
+                        <td colspan="5" class="px-5 py-8 text-center text-xs text-zinc-600 uppercase">
+                            Loading...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="leaderboardEmpty"
+             class="hidden px-5 py-10 text-center text-xs text-zinc-600 uppercase">
+            No completed laps yet
+        </div>
+    </section>
+
+    <!-- LAST ACTIVE USERS -->
+    <section class="metallic-finish border border-white/10 rounded-lg overflow-hidden">
+
+        <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+            <div>
+                <div class="text-xs font-black uppercase tracking-widest text-blue-500">
+                    Last Active Users
+                </div>
+                <div class="text-xs text-zinc-500 mt-1">
+                    Recent drivers with their lap performance
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div id="lastActiveStatus"
+                     class="text-[10px] font-bold uppercase text-zinc-600">
+                    UPDATING
+                </div>
+                <button onclick="loadLastActiveUsers()"
+                        class="border border-white/15 px-3 py-2 text-[11px] font-bold uppercase tracking-wider hover:bg-white/10">
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="bg-black/40">
+                    <tr class="text-[10px] text-zinc-500 uppercase tracking-widest">
+                        <th class="px-5 py-3 w-20">Rank</th>
+                        <th class="px-5 py-3">Driver</th>
+                        <th class="px-5 py-3">Best Lap</th>
+                        <th class="px-5 py-3">Last Lap</th>
+                        <th class="px-5 py-3 text-right">Laps</th>
+                    </tr>
+                </thead>
+                <tbody id="lastActiveBody">
+                    <tr>
+                        <td colspan="5" class="px-5 py-8 text-center text-xs text-zinc-600 uppercase">
+                            Loading...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+<script>
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function formatLap(ms) {
+    if (ms === null || ms === undefined || Number(ms) < 0) {
+        return "--";
+    }
+
+    ms = Math.floor(Number(ms));
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    const milliseconds = ms % 1000;
+
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
+}
+
+function formatDateTime(value) {
+    if (!value) return "--";
+
+    const date = new Date(value.replace(" ", "T"));
+    if (Number.isNaN(date.getTime())) {
+        return escapeHtml(value);
+    }
+
+    return date.toLocaleString([], {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+}
+
+async function loadLeaderboard() {
+    const status = document.getElementById("leaderboardStatus");
+    const body = document.getElementById("leaderboardBody");
+    const empty = document.getElementById("leaderboardEmpty");
+
+    try {
+        const res = await fetch("/api/leaderboard", {
+            cache: "no-store"
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Leaderboard load failed");
+        }
+
+        const entries = data.leaderboard || [];
+
+        if (entries.length === 0) {
+            body.innerHTML = "";
+            empty.classList.remove("hidden");
+            status.innerText = "NO LAPS";
+            return;
+        }
+
+        empty.classList.add("hidden");
+
+        body.innerHTML = entries.map((entry, index) => {
+            const rank = index + 1;
+
+            return `
+                <tr class="table-row hover:bg-white/[0.03]">
+                    <td class="px-5 py-3">
+                        <span class="text-sm font-black ${rank <= 3 ? "text-red-500" : "text-zinc-500"}">
+                            ${rank}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-3">
+                        <div class="text-sm font-bold">
+                            ${escapeHtml(entry.driver_name || "Unknown Driver")}
+                        </div>
+                    </td>
+
+                    <td class="px-5 py-3">
+                        <span class="text-sm font-black text-white">
+                            ${formatLap(entry.best_lap_ms)}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-3">
+                        <span class="text-sm text-zinc-400">
+                            ${formatLap(entry.last_lap_ms)}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-3 text-right">
+                        <span class="text-sm font-black">
+                            ${Number(entry.lap_count) || 0}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+
+        status.innerText = `${entries.length} DRIVER${entries.length === 1 ? "" : "S"}`
+    } catch (error) {
+        console.error("Leaderboard:", error);
+        body.innerHTML = `
+            <tr>
+                <td colspan="5" class="px-5 py-8 text-center text-xs text-red-500 uppercase">
+                    Failed to load leaderboard
+                </td>
+            </tr>
+        `;
+        status.innerText = "ERROR";
+    }
+}
+
+async function loadLastActiveUsers() {
+    const body = document.getElementById("lastActiveBody");
+    const status = document.getElementById("lastActiveStatus");
+
+    try {
+        const res = await fetch("/api/users/last-active", {
+            cache: "no-store"
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Last active users load failed");
+        }
+
+        const users = data.users || [];
+
+        if (users.length === 0) {
+            body.innerHTML = `
+                <tr>
+                    <td colspan="5"
+                        class="px-5 py-8 text-center text-xs text-zinc-600 uppercase">
+                        No active users yet
+                    </td>
+                </tr>
+            `;
+            status.innerText = "NO USERS";
+            return;
+        }
+
+        body.innerHTML = users.map((user, index) => {
+            const rank = index + 1;
+
+            return `
+                <tr class="table-row hover:bg-white/[0.03]">
+                    <td class="px-5 py-3">
+                        <span class="text-sm font-black ${rank <= 3 ? "text-blue-500" : "text-zinc-500"}">
+                            ${rank}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-3">
+                        <div class="text-sm font-bold">
+                            ${escapeHtml(user.name || "Unknown Driver")}
+                        </div>
+                    </td>
+
+                    <td class="px-5 py-3">
+                        <span class="text-sm font-black text-white">
+                            ${formatLap(user.best_lap_ms)}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-3">
+                        <span class="text-sm text-zinc-400">
+                            ${formatLap(user.last_lap_ms)}
+                        </span>
+                    </td>
+
+                    <td class="px-5 py-3 text-right">
+                        <span class="text-sm font-black">
+                            ${Number(user.lap_count) || 0}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+
+        status.innerText =
+            `${users.length} DRIVER${users.length === 1 ? "" : "S"}`;
+
+    } catch (error) {
+        console.error("Last active users:", error);
+
+        body.innerHTML = `
+            <tr>
+                <td colspan="5"
+                    class="px-5 py-8 text-center text-xs text-red-500 uppercase">
+                    Failed to load users
+                </td>
+            </tr>
+        `;
+
+        status.innerText = "ERROR";
+    }
+}
+
+async function refreshPageData() {
+    await Promise.all([
+        loadLeaderboard(),
+        loadLastActiveUsers()
+    ]);
+}
+
+refreshPageData();
+setInterval(refreshPageData, 2000);
+</script>
+
+</body>
+</html>

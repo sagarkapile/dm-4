@@ -1,0 +1,26 @@
+{
+  "1": {
+    "autocenter_enabled": true,
+    "session_duration_minutes": 7,
+    "steering_sensitivity": 200,
+    "throttle_sensitivity": 90
+  },
+  "2": {
+    "autocenter_enabled": true,
+    "session_duration_minutes": 1,
+    "steering_sensitivity": 180,
+    "throttle_sensitivity": 100
+  },
+  "3": {
+    "autocenter_enabled": true,
+    "session_duration_minutes": 10,
+    "steering_sensitivity": 195,
+    "throttle_sensitivity": 45
+  },
+  "4": {
+    "autocenter_enabled": true,
+    "session_duration_minutes": 111,
+    "steering_sensitivity": 100,
+    "throttle_sensitivity": 100
+  }
+}
