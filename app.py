@@ -1075,6 +1075,10 @@ def handle_telemetry_impact(impact):
         if cockpit is None or cockpit.vehicle_name is None:
             continue
 
+        # ESP cars have no RX telemetry, so impact FFB never applies to them.
+        if cockpit.vehicle_type == "esp":
+            continue
+
         active_vehicle = radio_manager.get_active_vehicle(
             cockpit.vehicle_name
         )
@@ -1146,12 +1150,14 @@ telemetry_session_lock = threading.Lock()
 def sync_telemetry_receiver():
     """
     Run telemetry reception only while at least one RF cockpit
-    session is active.
+    session is active. ESP cars have no RX telemetry, so ESP-only
+    sessions must not keep the receiver running.
     """
     with cockpit_sessions_lock:
         session_active = any(
             session["active"]
-            for session in cockpit_sessions.values()
+            and getattr(cockpit_manager.get_cockpit(cockpit_id), "vehicle_type", None) != "esp"
+            for cockpit_id, session in cockpit_sessions.items()
         )
 
     with telemetry_session_lock:
@@ -1334,91 +1340,24 @@ def find_vehicle_by_transponder_id(transponder_id):
                 "transponder_id": stored_id
             }
 
-    # -------------------------------------------------
-    # ESP vehicles
-    # -------------------------------------------------
-    with esp_vehicle_lock:
-        for cockpit_id, vehicle in esp_vehicles.items():
-
-            stored_id = vehicle.get("transponder_id")
-
-            if stored_id is None:
-                continue
-
-            try:
-                stored_id = int(stored_id)
-            except (TypeError, ValueError):
-                continue
-
-            if stored_id == transponder_id:
-                print(
-                    f"[Lap Timer] ESP vehicle mapped: "
-                    f"cockpit={cockpit_id} "
-                    f"vehicle={vehicle['name']} "
-                    f"transponder={stored_id}"
-                )
-
-                return {
-                    "type": "esp",
-                    "cockpit_id": cockpit_id,
-                    "receiver_id": f"ESP{cockpit_id}",
-                    "name": str(
-                        vehicle.get("name", "")
-                    ).strip(),
-                    "transponder_id": stored_id
-                }
-
+    # ESP cars have no RF telemetry/transponder link, so lap timing is
+    # RF-only by design; ESP transponder ids in esp_vehicles.json are not
+    # matched here.
     return None
 
 def find_active_cockpit_for_vehicle(vehicle):
     """
-    Find the cockpit currently running a session for this vehicle.
-    Supports both RF and ESP vehicles.
+    Find the cockpit currently running an RF session for this vehicle.
+
+    Lap timing is RF-only by design: ESP cars have no RX telemetry link,
+    so this never matches an ESP-driven cockpit.
     """
 
     if vehicle is None:
         return None
 
-    vehicle_type = vehicle.get("type")
-
-    # -------------------------------------------------
-    # ESP vehicle
-    # -------------------------------------------------
-    if vehicle_type == "esp":
-
-        cockpit_id = vehicle.get("cockpit_id")
-
-        if cockpit_id is None:
-            return None
-
-        try:
-            cockpit_id = int(cockpit_id)
-        except (TypeError, ValueError):
-            return None
-
-        if cockpit_id not in esp_cockpits:
-            return None
-
-        with esp_cockpit_sessions_lock:
-            session = esp_cockpit_sessions[cockpit_id]
-
-            if not session["active"]:
-                return None
-
-        # Verify that this ESP car is actually assigned
-        # to this cockpit.
-        with esp_cockpit_vehicle_lock:
-            assigned_car_id = esp_cockpit_vehicles.get(cockpit_id)
-
-        if assigned_car_id != cockpit_id:
-            return None
-
-        print(
-            f"[Lap Timer] ESP vehicle active in "
-            f"Cockpit {cockpit_id}"
-        )
-
-        return cockpit_id
+    if vehicle.get("type") == "esp":
+        return None
 
     # -------------------------------------------------
     # RF vehicle
@@ -1478,16 +1417,11 @@ def process_lap_detection(vehicle, cockpit_id, timer):
 
     if state is None:
 
-        if vehicle.get("type") == "esp":
-            with esp_cockpit_driver_lock:
-                driver = dict(
-                    esp_cockpit_drivers.get(cockpit_id, {})
-                )
-        else:
-            with cockpit_driver_lock:
-                driver = dict(
-                    cockpit_drivers.get(cockpit_id, {})
-                )
+        # Lap timing is RF-only; the driver is always the RF cockpit driver.
+        with cockpit_driver_lock:
+            driver = dict(
+                cockpit_drivers.get(cockpit_id, {})
+            )
 
         driver_name = driver.get("name") or "Unknown Driver"
 
@@ -2796,19 +2730,6 @@ def esp_cockpit_refresh():
     try:
         reconcile_esp_devices()
 
-        # The control worker is otherwise only ever started once at Flask
-        # boot. Restart it here for any cockpit that now has a wheel and an
-        # ESP32 but no live worker, so replugged hardware works immediately.
-        with esp_cockpits_lock:
-            ready_cockpits = [
-                cockpit_id
-                for cockpit_id, cockpit in esp_cockpits.items()
-                if cockpit["wheel"] is not None and cockpit["esp"] is not None
-            ]
-
-        for cockpit_id in ready_cockpits:
-            start_esp_cockpit_control_worker(cockpit_id)
-
         return jsonify({"success": True})
     except Exception as e:
         print(f"[ESP Cockpit API] Refresh error: {e}")
@@ -3439,20 +3360,11 @@ def cockpit_device_monitor_worker():
                     f"Nanos {len(previous_radios)} -> {len(current_radios)}"
                 )
                 # A wheel move can land on either the RF or the ESP USB
-                # group, so both device tables must be reconciled here.
+                # group, so both device tables must be reconciled here. ESP32
+                # serial output is driven by the merged RF cockpit worker,
+                # which reads esp_cockpits[cockpit_id]["esp"] directly.
                 reconcile_cockpit_devices()
                 reconcile_esp_devices()
-
-                with esp_cockpits_lock:
-                    ready_esp_cockpits = [
-                        cockpit_id
-                        for cockpit_id, cockpit in esp_cockpits.items()
-                        if cockpit["wheel"] is not None
-                        and cockpit["esp"] is not None
-                    ]
-
-                for cockpit_id in ready_esp_cockpits:
-                    start_esp_cockpit_control_worker(cockpit_id)
 
                 previous_wheels = _scan_g29_identities()
                 previous_radios = _scan_radio_ids()
@@ -3573,6 +3485,38 @@ def _send_cockpit_zero(radio_id):
         print(
             f"[Control] Zero command failed for radio "
             f"{radio_id}: {exc}"
+        )
+
+
+def _send_esp_cockpit_zero(cockpit_id):
+    """Neutral out this cockpit's ESP32 car, if one is currently assigned.
+
+    The ESP32 controller is keyed by the assigned ESP car id, which is a
+    separate id space from the RF cockpit_id driving it.
+    """
+    cockpit = cockpit_manager.get_cockpit(cockpit_id)
+    if (
+        cockpit is None
+        or cockpit.vehicle_type != "esp"
+        or cockpit.esp_car_id is None
+    ):
+        return
+
+    with esp_cockpits_lock:
+        controller = esp_cockpits.get(cockpit.esp_car_id, {}).get("esp")
+
+    if controller is None:
+        return
+
+    try:
+        controller.send_control(
+            _esp_throttle_to_dac(0),
+            _esp_steering_to_dac(0)
+        )
+    except Exception as exc:
+        print(
+            f"[Control] ESP zero command failed for cockpit "
+            f"{cockpit_id}: {exc}"
         )
 
 
@@ -3829,8 +3773,17 @@ def cockpit_control_worker(cockpit_id):
                 controls_armed = False
                 neutral_cycles = 0
 
+            is_esp_vehicle = cockpit is not None and cockpit.vehicle_type == "esp"
+
             registry_vehicle = None
-            if cockpit is not None and cockpit.vehicle_name:
+            esp_controller = None
+
+            if is_esp_vehicle:
+                with esp_cockpits_lock:
+                    esp_controller = esp_cockpits.get(
+                        cockpit.esp_car_id, {}
+                    ).get("esp")
+            elif cockpit is not None and cockpit.vehicle_name:
                 _, registry_vehicle = (
                     cockpit_manager.radio_manager.vehicle_registry.find_by_name(
                         cockpit.vehicle_name
@@ -3944,26 +3897,55 @@ def cockpit_control_worker(cockpit_id):
             #   3. No vehicle is assigned
             #   4. Controls are not yet armed
             #
-            # RF SESSION_STOP already puts the vehicle into its
-            # safe state, so there is no reason to send another
-            # zero-control packet here.
+            # RF SESSION_STOP already puts the vehicle into its safe state,
+            # so there is no reason to send another zero-control packet
+            # here. ESP32s have no such session concept, so they must keep
+            # receiving explicit neutral frames whenever the gate is closed.
             # -------------------------------------------------
-            if (
-                not session_active_now
-                or cockpit is None
-                or cockpit.vehicle_name is None
-                or not controls_armed
-                or not radio_id
-            ):
+            gate_open = (
+                session_active_now
+                and cockpit is not None
+                and cockpit.vehicle_name is not None
+                and controls_armed
+                and (radio_id if not is_esp_vehicle else True)
+            )
+
+            if not gate_open:
+                if is_esp_vehicle and esp_controller is not None:
+                    try:
+                        esp_controller.send_control(
+                            _esp_throttle_to_dac(0),
+                            _esp_steering_to_dac(0)
+                        )
+                    except Exception as esp_exc:
+                        print(
+                            f"[Control] Cockpit {cockpit_id} ESP zero "
+                            f"error: {esp_exc}"
+                        )
                 last_send = now
                 time.sleep(COCKPIT_CONTROL_INTERVAL)
                 continue
 
-            ok = cockpit_manager.radio_manager.send_control(
-                radio_id,
-                steering,
-                throttle
-            )
+            if is_esp_vehicle:
+                ok = True
+                if esp_controller is not None:
+                    try:
+                        esp_controller.send_control(
+                            _esp_throttle_to_dac(throttle),
+                            _esp_steering_to_dac(steering)
+                        )
+                    except Exception as esp_exc:
+                        print(
+                            f"[Control] Cockpit {cockpit_id} ESP send "
+                            f"error: {esp_exc}"
+                        )
+                        ok = False
+            else:
+                ok = cockpit_manager.radio_manager.send_control(
+                    radio_id,
+                    steering,
+                    throttle
+                )
 
             # Soft-fail only: keep streaming next frames even on TX_FAIL.
             last_send = now
@@ -3974,10 +3956,12 @@ def cockpit_control_worker(cockpit_id):
         print(f"[Control] Cockpit {cockpit_id} worker error: {exc}")
         if radio_id is not None:
             _send_cockpit_zero(radio_id)
+        _send_esp_cockpit_zero(cockpit_id)
 
     finally:
         if radio_id is not None:
             _send_cockpit_zero(radio_id)
+        _send_esp_cockpit_zero(cockpit_id)
 
         if ffb is not None:
             try:
@@ -4519,11 +4503,14 @@ def expire_cockpit_session(cockpit_id):
     # RF stop is deliberately sent before releasing the logical assignment.
     # The RX remains authoritative even if the Pi-side timer fires first.
     if cockpit is not None:
-        stop_ok, stop_error = _send_cockpit_session_stop(cockpit)
-        if not stop_ok:
-            print(
-                f"[Session] Cockpit {cockpit_id} RX stop warning: {stop_error}"
-            )
+        if cockpit.vehicle_type == "esp":
+            _send_esp_cockpit_zero(cockpit_id)
+        else:
+            stop_ok, stop_error = _send_cockpit_session_stop(cockpit)
+            if not stop_ok:
+                print(
+                    f"[Session] Cockpit {cockpit_id} RX stop warning: {stop_error}"
+                )
 
     with cockpit_sessions_lock:
         session = cockpit_sessions[cockpit_id]
@@ -4630,15 +4617,20 @@ def start_cockpit_session(cockpit_id):
     if cockpit.vehicle_name is None:
         return False, f"Cockpit {cockpit_id} has no vehicle assigned"
 
-    nano_id, receiver_id, _controller = _resolve_cockpit_pairing(cockpit)
-    if not nano_id:
-        return False, (
-            f"Cockpit {cockpit_id} car has no Nano pairing in Vehicle Management"
-        )
-    if not receiver_id:
-        return False, (
-            f"Cockpit {cockpit_id} car has no RF receiver ID in Vehicle Management"
-        )
+    is_esp_vehicle = cockpit.vehicle_type == "esp"
+
+    # ESP cars have no Nano/RF pairing; they drive over a fixed USB-serial
+    # ESP32 identified purely by cockpit_id.
+    if not is_esp_vehicle:
+        nano_id, receiver_id, _controller = _resolve_cockpit_pairing(cockpit)
+        if not nano_id:
+            return False, (
+                f"Cockpit {cockpit_id} car has no Nano pairing in Vehicle Management"
+            )
+        if not receiver_id:
+            return False, (
+                f"Cockpit {cockpit_id} car has no RF receiver ID in Vehicle Management"
+            )
 
     with cockpit_settings_lock:
         duration_minutes = cockpit_settings[cockpit_id][
@@ -4673,17 +4665,19 @@ def start_cockpit_session(cockpit_id):
     ends_at = now + duration_seconds
 
     # CRITICAL: send RF session start first. Do not mark the Pi session active
-    # if the Nano/RX did not receive the command successfully.
-    session_ok, session_error = _send_cockpit_session_start(
-        cockpit,
-        duration_seconds
-    )
-    if not session_ok:
-        print(
-            f"[Session] Cockpit {cockpit_id} NOT started locally: "
-            f"{session_error}"
+    # if the Nano/RX did not receive the command successfully. ESP cars have
+    # no equivalent hardware session, so this step is RF-only.
+    if not is_esp_vehicle:
+        session_ok, session_error = _send_cockpit_session_start(
+            cockpit,
+            duration_seconds
         )
-        return False, session_error
+        if not session_ok:
+            print(
+                f"[Session] Cockpit {cockpit_id} NOT started locally: "
+                f"{session_error}"
+            )
+            return False, session_error
 
     with cockpit_sessions_lock:
         cockpit_sessions[cockpit_id] = {
@@ -4745,11 +4739,14 @@ def stop_cockpit_session(cockpit_id):
     # If a session is active, stop the authoritative RX session before
     # releasing the vehicle assignment.
     if was_active:
-        stop_ok, stop_error = _send_cockpit_session_stop(cockpit)
-        if not stop_ok:
-            print(
-                f"[Session] Cockpit {cockpit_id} RX stop warning: {stop_error}"
-            )
+        if cockpit.vehicle_type == "esp":
+            _send_esp_cockpit_zero(cockpit_id)
+        else:
+            stop_ok, stop_error = _send_cockpit_session_stop(cockpit)
+            if not stop_ok:
+                print(
+                    f"[Session] Cockpit {cockpit_id} RX stop warning: {stop_error}"
+                )
 
     # Clear lap timing state for the vehicle being released.
     if cockpit.vehicle_name is not None:
@@ -4813,6 +4810,7 @@ def get_cockpit_payload():
 
         vehicles.append({
             "name": name,
+            "type": "rf",
             "receiver_id": str(receiver_id).strip().upper(),
             "nano_id": vehicle_nano_id,
             # Always selectable in UI once configured. Live Nano serial
@@ -4821,6 +4819,18 @@ def get_cockpit_payload():
         })
 
     vehicles.sort(key=lambda item: item["name"])
+
+    # ESP cars share the same wheel/cockpit; they use a USB-serial ESP32
+    # instead of a Nano radio, so they carry no receiver/nano_id.
+    with esp_vehicle_lock:
+        for car_id, esp_vehicle in esp_vehicles.items():
+            vehicles.append({
+                "name": str(esp_vehicle.get("name", f"Car {car_id}")).strip(),
+                "type": "esp",
+                "car_id": car_id,
+                "transponder_id": esp_vehicle.get("transponder_id"),
+                "available": True
+            })
 
     cockpits = []
 
@@ -4851,6 +4861,8 @@ def get_cockpit_payload():
             "radio": None,
             "nano": None,
             "vehicle": cockpit.vehicle_name,
+            "vehicle_type": cockpit.vehicle_type,
+            "esp_car_id": cockpit.esp_car_id,
             "paired_nano_id": cockpit.radio_id,
             "driver": driver_snapshot,
             "settings": settings_snapshot[cockpit_id],
@@ -5266,18 +5278,6 @@ def cockpit_refresh():
         scan_ok, scan_reason = refresh_cockpit_devices()
         reconcile_esp_devices()
 
-        # ESP control workers are otherwise only started once at Flask boot;
-        # restart any that are missing now that hardware was rescanned.
-        with esp_cockpits_lock:
-            ready_esp_cockpits = [
-                cockpit_id
-                for cockpit_id, cockpit in esp_cockpits.items()
-                if cockpit["wheel"] is not None and cockpit["esp"] is not None
-            ]
-
-        for cockpit_id in ready_esp_cockpits:
-            start_esp_cockpit_control_worker(cockpit_id)
-
         payload = get_cockpit_payload()
 
         if not scan_ok:
@@ -5331,6 +5331,43 @@ def set_cockpit_vehicle(cockpit_id):
                 # Explicitly unassigning means the operator no longer wants
                 # this cockpit to remember its previous car.
                 _set_preferred_car(cockpit_id, None)
+        elif str(vehicle_name).startswith("ESP:"):
+            # ESP cars drive over this cockpit's own wheel/sliders through a
+            # fixed USB-serial ESP32; there is no Nano/RF pairing involved.
+            try:
+                car_id = int(str(vehicle_name).split("ESP:", 1)[1])
+            except ValueError:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid ESP vehicle"
+                }), 400
+
+            with esp_vehicle_lock:
+                esp_vehicle = esp_vehicles.get(car_id)
+
+            if esp_vehicle is None:
+                return jsonify({
+                    "success": False,
+                    "error": "Unknown ESP vehicle"
+                }), 400
+
+            try:
+                success = cockpit_manager.select_esp_vehicle(
+                    cockpit_id,
+                    car_id,
+                    esp_vehicle["name"]
+                )
+            except ValueError as exc:
+                return jsonify({
+                    "success": False,
+                    "error": str(exc)
+                }), 409
+
+            selected_vehicle = esp_vehicle["name"] if success else None
+            if success:
+                # ESP car choice is not a Vehicle Management registry pairing,
+                # so there is nothing to remember as a preferred RF car.
+                _set_preferred_car(cockpit_id, None)
         else:
             vehicle_name = str(vehicle_name).strip()
 
@@ -5364,13 +5401,17 @@ def set_cockpit_vehicle(cockpit_id):
                         f"{cockpit.radio_id}: {exc}"
                     )
 
-            # Start control when a wheel is present and a car (with registry
-            # Nano pairing) is selected. Do not require Nano serial online.
+            # Start control when a wheel is present and a car is selected.
+            # RF cars additionally need a resolved Nano pairing; ESP cars
+            # drive straight over USB serial and need no radio_id.
             if (
                 cockpit is not None
                 and cockpit.wheel is not None
-                and cockpit.radio_id is not None
                 and cockpit.vehicle_name is not None
+                and (
+                    cockpit.vehicle_type == "esp"
+                    or cockpit.radio_id is not None
+                )
             ):
                 start_cockpit_control_worker(cockpit_id)
 
@@ -5698,8 +5739,9 @@ if __name__ == '__main__':
 
     start_lap_timer()
 
-    for cockpit_id in range(1, ESP_COCKPIT_COUNT + 1):
-        start_esp_cockpit_control_worker(cockpit_id)
+    # ESP32 output is now driven by the merged RF cockpit control worker
+    # (see start_cockpit_control_worker); the legacy per-ESP-wheel worker
+    # is no longer started automatically.
 
     # Telemetry reception, impact detection and validated G29 impact FFB.
 #    telemetry_receiver.start()

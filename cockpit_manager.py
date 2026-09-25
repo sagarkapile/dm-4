@@ -15,6 +15,9 @@ class Cockpit:
     wheel: object = None
     radio_id: str = None
     vehicle_name: str = None
+    # "rf" (Nano radio) or "esp" (USB serial ESP32); None when unassigned.
+    vehicle_type: str = None
+    esp_car_id: int = None
 
     @property
     def assigned(self):
@@ -292,12 +295,47 @@ class CockpitManager:
 
         cockpit.radio_id = nano_id
         cockpit.vehicle_name = str(vehicle.get("name", vehicle_name)).strip()
+        cockpit.vehicle_type = "rf"
+        cockpit.esp_car_id = None
+
+        return True
+
+    def select_esp_vehicle(self, cockpit_id, car_id, car_name):
+        """
+        Assign a fixed ESP32/DAC vehicle to a cockpit.
+
+        ESP cars have no Nano/RF pairing: the ESP32 USB serial controller
+        bound to this cockpit_id (see app.py reconcile_esp_devices) is used
+        directly by the shared control worker.
+        """
+
+        cockpit = self.cockpits.get(cockpit_id)
+
+        if cockpit is None:
+            raise ValueError(
+                f"Invalid cockpit ID: {cockpit_id}"
+            )
+
+        for other_id, other in self.cockpits.items():
+            if (
+                other_id != cockpit_id
+                and other.vehicle_type == "esp"
+                and other.esp_car_id == car_id
+            ):
+                raise ValueError(
+                    f"ESP car {car_id} is already assigned to Cockpit {other_id}"
+                )
+
+        cockpit.radio_id = None
+        cockpit.vehicle_type = "esp"
+        cockpit.esp_car_id = car_id
+        cockpit.vehicle_name = str(car_name).strip()
 
         return True
 
     def clear_nano(self, cockpit_id):
         """
-        Unassign the Nano from a cockpit.
+        Unassign the current vehicle (RF or ESP) from a cockpit.
 
         The Nano's own RX pairing is permanent and is never cleared;
         this only releases it from this cockpit.
@@ -312,6 +350,8 @@ class CockpitManager:
 
         cockpit.radio_id = None
         cockpit.vehicle_name = None
+        cockpit.vehicle_type = None
+        cockpit.esp_car_id = None
 
         return True
 
