@@ -365,12 +365,14 @@ class VehicleRegistry:
         """Create or update a vehicle from Nano PAIRING data.
 
         Rules:
-          - If RF ID does not exist: create vehicle with name + nano_id
-          - If RF ID exists and nano_id is empty: set nano_id
-          - If RF ID exists and nano_id already set to another Nano: keep
-            existing nano unless empty
-          - Never overwrite an existing non-empty vehicle name with blank
-          - Clear stale nano_id ownership on other RF IDs for this Nano
+          - A Nano ID already paired to an existing vehicle (any RX id) is
+            left completely untouched: no new entry, no re-pairing. This
+            keeps every already-known Nano's car assignment stable across
+            restarts/refreshes, even if a PAIRING read momentarily reports
+            a different RX id.
+          - Only a genuinely new (never-seen) Nano ID may create a vehicle,
+            or attach to an existing RX entry that has no nano_id yet.
+          - Never overwrite an existing non-empty vehicle name with blank.
         """
         receiver_id = str(receiver_id or "").strip().upper()
         vehicle_name = str(vehicle_name or "").strip()
@@ -390,15 +392,20 @@ class VehicleRegistry:
         action = "unchanged"
 
         with self.lock:
-            # One Nano maps to one RF vehicle. Clear this nano_id from any
-            # other receiver so the pairing stays unique.
-            for other_id, other in self.vehicles.items():
-                if not isinstance(other, dict):
+            # If this Nano is already paired to a different RX entry, do not
+            # move the pairing or create a duplicate car; leave it as-is.
+            for existing_id, existing in self.vehicles.items():
+                if not isinstance(existing, dict):
                     continue
-                if other_id == receiver_id:
+                if existing_id == receiver_id:
                     continue
-                if str(other.get("nano_id") or "").strip() == nano_id:
-                    other["nano_id"] = None
+                if str(existing.get("nano_id") or "").strip() == nano_id:
+                    print(
+                        f"[VehicleRegistry] Nano {nano_id} already paired "
+                        f"to {existing_id}; ignoring PAIRING report of "
+                        f"{receiver_id}"
+                    )
+                    return "unchanged", dict(existing)
 
             vehicle = self.vehicles.get(receiver_id)
 
@@ -418,7 +425,9 @@ class VehicleRegistry:
                 existing_nano = str(vehicle.get("nano_id") or "").strip() or None
                 existing_name = str(vehicle.get("name") or "").strip()
 
-                if not existing_nano or existing_nano != nano_id:
+                # A known Nano's own pairing (receiver_id already matches)
+                # only needs its nano_id filled in if it was ever empty.
+                if not existing_nano:
                     vehicle["nano_id"] = nano_id
                     changed = True
 
