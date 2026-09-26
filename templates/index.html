@@ -707,7 +707,15 @@ async function selectCockpitDriver(cockpitId, userId) {
 
 async function loadCockpits() {
     const grid = document.getElementById("cockpitGrid");
-    grid.innerHTML = '<div class="text-xs text-zinc-500 uppercase">Discovering...</div>';
+
+    // Only show the placeholder on the very first load. Blanking the grid
+    // on every refresh (Apply, session start/stop, vehicle/driver select)
+    // collapses the page height for a moment and snaps the scroll position
+    // to the top, which looks like the page "jumps" on every click.
+    const isFirstLoad = grid.dataset.loaded !== "true";
+    if (isFirstLoad) {
+        grid.innerHTML = '<div class="text-xs text-zinc-500 uppercase">Discovering...</div>';
+    }
 
     try {
         const res = await fetch("/api/cockpits");
@@ -718,11 +726,16 @@ async function loadCockpits() {
         }
 
         renderCockpits(data);
+        grid.dataset.loaded = "true";
     } catch (error) {
-        grid.innerHTML = `
-            <div class="text-xs text-red-500 uppercase">
-                ${escapeHtml(error.message)}
-            </div>`;
+        if (isFirstLoad) {
+            grid.innerHTML = `
+                <div class="text-xs text-red-500 uppercase">
+                    ${escapeHtml(error.message)}
+                </div>`;
+        } else {
+            showCockpitMessage(error.message, false);
+        }
     }
 }
 

@@ -4546,7 +4546,15 @@ def expire_cockpit_session(cockpit_id):
 
 
     try:
-        if cockpit is not None and cockpit.vehicle_name is not None:
+        # ESP cars are fixed to their cockpit's own USB-serial ESP32, so a
+        # session ending must not release them: keep the same car selected
+        # (as the pre-merge standalone ESP cockpits always did) so the next
+        # Start works immediately without reselecting a car.
+        if cockpit is not None and cockpit.vehicle_type == "esp":
+            print(
+                f"[Session] Cockpit {cockpit_id} expired; ESP car kept assigned"
+            )
+        elif cockpit is not None and cockpit.vehicle_name is not None:
             success = cockpit_manager.clear_nano(cockpit_id)
             if success:
                 print(
@@ -4779,7 +4787,10 @@ def stop_cockpit_session(cockpit_id):
 
     sync_telemetry_receiver()
 
-    if cockpit.vehicle_name is not None:
+    # ESP cars stay assigned to their cockpit across a manual stop, same as
+    # the pre-merge standalone ESP cockpits, so the next Start does not
+    # require reselecting a car.
+    if cockpit.vehicle_type != "esp" and cockpit.vehicle_name is not None:
         try:
             if not cockpit_manager.clear_nano(cockpit_id):
                 return False, "Vehicle release failed"
