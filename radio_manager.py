@@ -32,7 +32,7 @@ class RadioManager:
     # DISCOVER NANOS
     # ========================================================
 
-    def discover(self):
+    def discover(self, skip_ports=None):
         """Discover Nano radios while preserving existing controllers."""
         # Ports already owned by a connected controller must never be
         # reopened here. identify_radio() opens the serial port, which
@@ -43,6 +43,11 @@ class RadioManager:
             for controller in self.radios.values()
             if controller.connected
         }
+
+        # ESP32 USB-serial cars must never be probed as candidate Nanos.
+        # identify_radio() opens the port and resets the board, which
+        # would repeatedly kill an active ESP car's control connection.
+        active_ports |= {str(port) for port in (skip_ports or ())}
 
         ports = find_serial_ports()
         discovered_ids = set()
@@ -144,7 +149,7 @@ class RadioManager:
     # SYNC VEHICLE REGISTRY FROM NANO PAIRINGS
     # ========================================================
 
-    def sync_registry_from_nano_pairings(self):
+    def sync_registry_from_nano_pairings(self, skip_ports=None):
         """Scan connected Nanos, query PAIRING, upsert vehicle registry.
 
         For each connected Nano:
@@ -160,7 +165,7 @@ class RadioManager:
         pairings = []
 
         # Ensure we have current serial handles.
-        self.discover()
+        self.discover(skip_ports=skip_ports)
         self.connect_all()
 
         for radio_id, controller in list(self.radios.items()):

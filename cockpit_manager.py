@@ -56,7 +56,7 @@ class CockpitManager:
     # DISCOVERY
     # ========================================================
 
-    def discover(self):
+    def discover(self, skip_radio_ports=None):
         """
         Discover currently connected G29 wheels and Nano radios.
 
@@ -65,7 +65,7 @@ class CockpitManager:
         """
 
         wheels = self.wheel_manager.discover()
-        radios = self.radio_manager.discover()
+        radios = self.radio_manager.discover(skip_ports=skip_radio_ports)
 
         return wheels, radios
 

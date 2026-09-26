@@ -2757,7 +2757,9 @@ def sync_vehicles_from_connected_nanos():
     Then create the vehicle if missing, or fill empty nano_id if present.
     """
     try:
-        summary = cockpit_manager.radio_manager.sync_registry_from_nano_pairings()
+        summary = cockpit_manager.radio_manager.sync_registry_from_nano_pairings(
+            skip_ports=_current_esp_serial_ports()
+        )
         return True, summary
     except Exception as exc:
         print(f"[Vehicle Sync] Nano pairing sync failed: {exc}")
@@ -2870,6 +2872,21 @@ def discover_esp_serial_ports():
             ports.append(port)
 
     return sorted(ports, key=lambda p: str(p.device))
+
+
+def _current_esp_serial_ports():
+    """Ports currently claimed by ESP32 car controllers.
+
+    Nano discovery must never probe these: identify_radio() opens the
+    port and resets the board, which would repeatedly kill an active
+    ESP car's control connection.
+    """
+    with esp_cockpits_lock:
+        return {
+            cockpit["esp"].device
+            for cockpit in esp_cockpits.values()
+            if cockpit.get("esp") is not None
+        }
 
 
 class ESPUsbController:
@@ -3152,7 +3169,9 @@ def reconcile_cockpit_devices():
             # do not treat Nano discovery as a UI/selection requirement.
             try:
                 with radio_discovery_lock:
-                    cockpit_manager.radio_manager.discover()
+                    cockpit_manager.radio_manager.discover(
+                        skip_ports=_current_esp_serial_ports()
+                    )
                     cockpit_manager.connect_radios()
             except Exception as radio_exc:
                 print(f"[Discovery] Nano connect best-effort skipped: {radio_exc}")
@@ -3329,6 +3348,10 @@ def _scan_radio_ids():
         for radio in cockpit_manager.radio_manager.radios.values():
             ids.add(str(radio.radio_id).strip())
             in_use_ports.add(radio.port)
+
+        # ESP32 car ports must never be probed as candidate Nanos; opening
+        # the port to ask WHO resets the board (see identify_radio()).
+        in_use_ports |= _current_esp_serial_ports()
 
         # Then manually probe ports that are NOT in use
         from radio_discovery import find_serial_ports, identify_radio
@@ -5787,9 +5810,11 @@ def ffb_test_api():
     return jsonify({'success': True, 'effect': effect})
 
 if __name__ == '__main__':
-    initialize_cockpit_system()
-
+    # ESP32 car ports must be claimed before any Nano discovery runs, so
+    # identify_radio() never opens/resets them while probing for Nanos.
     reconcile_esp_devices()
+
+    initialize_cockpit_system()
 
     update_esp_ap_presence()
 
