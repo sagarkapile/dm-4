@@ -3457,13 +3457,30 @@ def _pedal_from_event(event_value, device, code):
 
 
 
-def _esp_throttle_to_dac(value):
+def _esp_throttle_to_dac(value, sensitivity=1.0):
+    """Map a full-strength -1000..1000 throttle to an ESP32 DAC byte.
+
+    `sensitivity` caps the achievable top speed (ceiling/floor) but never
+    changes the response slope near neutral. Scaling `value` itself by
+    sensitivity before this fixed 124..255/124..0 mapping (the previous
+    behavior) compresses the whole active range down around the neutral
+    point, so lower sensitivities push more and more of the pedal travel
+    into the motor's start-up dead zone - the car stays still through most
+    of the pedal, then lurches once the dead zone is finally cleared.
+    Capping the ceiling instead keeps the same immediate, proportional
+    response from the moment the pedal moves, just topping out sooner.
+    """
     value = _clamp(value, -1000, 1000)
+    sensitivity = _clamp(sensitivity, 0.0, 1.0)
 
     if value >= 0:
-        return int(round(124 + (value / 1000.0) * (255 - 124)))
+        full = 124 + (value / 1000.0) * (255 - 124)
+        ceiling = 124 + sensitivity * (255 - 124)
+        return int(round(min(full, ceiling)))
 
-    return int(round(124 + (value / 1000.0) * 124))
+    full = 124 + (value / 1000.0) * 124
+    floor = 124 - sensitivity * 124
+    return int(round(max(full, floor)))
 
 
 def _esp_steering_to_dac(value):
@@ -3806,6 +3823,8 @@ def cockpit_control_worker(cockpit_id):
             ):
                 steering = 0
                 throttle = 0
+                throttle_full = 0
+                throttle_sensitivity = 1.0
 
                 if (
                     session_active_now
@@ -3866,11 +3885,24 @@ def cockpit_control_worker(cockpit_id):
                     )
                 )
 
+                # Full-strength throttle (sensitivity ignored), used only for
+                # the ESP DAC cap-based mapping - see _esp_throttle_to_dac.
+                throttle_full = int(
+                    _clamp(
+                        (throttle_axis - brake_axis) * COCKPIT_CONTROL_SCALE,
+                        -COCKPIT_CONTROL_SCALE,
+                        COCKPIT_CONTROL_SCALE
+                    )
+                )
+
                 if abs(throttle) < COCKPIT_CONTROL_DEADZONE:
                     throttle = 0
-                
+                if abs(throttle_full) < COCKPIT_CONTROL_DEADZONE:
+                    throttle_full = 0
+
                 if real_brake_axis > 0.05:
                     throttle = 0
+                    throttle_full = 0
 
                 # Always print wheel axis mapping at 1 Hz while armed so we
                 # can see raw ABS_X -> normalized -> command values.
@@ -3932,7 +3964,10 @@ def cockpit_control_worker(cockpit_id):
                 if esp_controller is not None:
                     try:
                         esp_controller.send_control(
-                            _esp_throttle_to_dac(throttle),
+                            _esp_throttle_to_dac(
+                                throttle_full,
+                                throttle_sensitivity
+                            ),
                             _esp_steering_to_dac(steering)
                         )
                     except Exception as esp_exc:
@@ -4220,23 +4255,34 @@ def esp_cockpit_control_worker(cockpit_id):
                 COCKPIT_CONTROL_SCALE
             ))
 
+            # Full-strength throttle for the ESP DAC cap-based mapping;
+            # see _esp_throttle_to_dac.
+            throttle_full = int(_clamp(
+                (throttle_axis - brake_axis) * COCKPIT_CONTROL_SCALE,
+                -COCKPIT_CONTROL_SCALE,
+                COCKPIT_CONTROL_SCALE
+            ))
+
             # -------------------------------------------------
             # Deadzone
             # -------------------------------------------------
             if abs(throttle) < COCKPIT_CONTROL_DEADZONE:
                 throttle = 0
+            if abs(throttle_full) < COCKPIT_CONTROL_DEADZONE:
+                throttle_full = 0
 
             # -------------------------------------------------
             # Real brake safety
             # -------------------------------------------------
             if real_brake_axis > 0.05:
                 throttle = 0
+                throttle_full = 0
 
             # -------------------------------------------------
             # Convert to ESP DAC values and send
             # -------------------------------------------------
             esp.send_control(
-                _esp_throttle_to_dac(throttle),
+                _esp_throttle_to_dac(throttle_full, throttle_sensitivity),
                 _esp_steering_to_dac(steering)
             )
 
